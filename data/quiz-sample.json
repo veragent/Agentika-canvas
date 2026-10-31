@@ -1,0 +1,44 @@
+[
+  {
+    "id": "quiz-001",
+    "category": "Teknologi & Web",
+    "question": "API browser manakah yang memungkinkan encoding video hardware tanpa server?",
+    "options": [
+      "WebCodecs API",
+      "Canvas 2D API",
+      "Web Audio API",
+      "Fetch Streams API"
+    ],
+    "correctIndex": 0,
+    "explanation": "WebCodecs API menyediakan akses langsung ke encoder perangkat keras lokal (GPU).",
+    "countdownSeconds": 5
+  },
+  {
+    "id": "quiz-002",
+    "category": "Sains & Komputer",
+    "question": "Berapakah nilai mikrodetik dalam 1 detik video?",
+    "options": [
+      "10.000 µs",
+      "100.000 µs",
+      "1.000.000 µs",
+      "60.000.000 µs"
+    ],
+    "correctIndex": 2,
+    "explanation": "1 detik setara dengan 1.000.000 mikrodetik (µs) pada standar WebCodecs.",
+    "countdownSeconds": 5
+  },
+  {
+    "id": "quiz-003",
+    "category": "Arsitektur Video",
+    "question": "Metode apa yang digunakan agentika-canvas untuk memajukan jendela tanpa re-render DOM?",
+    "options": [
+      "css z-index override",
+      "focusWindow(layerId)",
+      "react state reordering",
+      "document.body.appendChild"
+    ],
+    "correctIndex": 1,
+    "explanation": "focusWindow() menghitung max(zIndex) + 1 pada SceneGraph kanvas secara instan.",
+    "countdownSeconds": 5
+  }
+]
