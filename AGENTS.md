@@ -27,11 +27,20 @@ EGM artifact directory: docs/designs
 ```bash
 npm run dev                  # Studio Editor lokal (Vite, port 3000)
 npm run build                # tsc + vite build (produksi)
-npm run cli -- generate-scene scripts/sample-script.md src/scenes/<nama>.scene.ts
+npm run cli -- generate-scene scripts/sample-script.md src/scenes/<nama-pak>   # output: <dir>/scene.ts + IDENTITY.md
 npm run cli -- inspect-script scripts/sample-script.md
 npm run cli -- batch-quiz data/quiz-sample.json
-npx tsx tests/phase1_phase2_verification.ts   # (+ phase3..phase7)
+npm run cli -- packs                                     # daftar scene pack (src/scenes/*/)
+npm run cli -- mission <packId|dir>                      # Render Mission pipeline (exit 0 = PASSED)
+npx tsx tests/phase1_phase2_verification.ts   # (+ phase3..phase8)
 ```
+
+## Aturan Mission & Scene Pack (Phase 8)
+
+1. Scene baru WAJIB dibuat sebagai **pack**: `src/scenes/<id>/` berisi `IDENTITY.md` + `scene.ts` (export `createScene(fps?)`).
+2. Export MP4 dari Studio **hanya diizinkan setelah Mission PASSED** (`assertMissionPassed`) — jangan bypass gerbang ini.
+3. Mission dijalankan ulang otomatis bila scene berganti; kegagalan identik 3× → HALTED (jangan loop manual).
+4. Catatan revisi FrameInspector adalah input reviewer `needs-human` — selesaikan sebelum export.
 
 ## Aturan Kode
 

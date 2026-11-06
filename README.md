@@ -38,6 +38,29 @@ Elemen visual dikelola secara terprogram melalui `SceneGraph`. Sebelum digambar,
 $$\text{targetLayer.zIndex} = \max(\text{allLayers.zIndex}) + 1$$
 Jendela langsung berpindah ke lapisan paling depan secara instan tanpa perlu merusak struktur pohon JSX/DOM. Dilengkapi proteksi `maxZCap = 900000` sehingga jendela tidak akan pernah menutupi kursor mouse.
 
+### 2b. Scene Pack & Render Mission Pipeline (Phase 8)
+
+**Scene adalah direktori, bukan file lepas** (konsep *scene-as-directory*, clean-room dari arsitektur agent Nouride):
+
+```text
+src/scenes/rea-opening/
+├── IDENTITY.md   # manifest: id, tags, kits, style, fps, resolusi, versi
+├── scene.ts      # export createScene(fps?): SceneBundle
+└── report.md     # dihasilkan Render Mission pipeline
+```
+
+**Render Mission** menutup celah *fire-and-hope rendering* — video yang gagal quality gate **tidak pernah diekspor**:
+
+* 10 check deterministik per scene (frame-count, timeline µs monotonik, z-index discipline, NaN guard, frame kosong, state layer/kamera, pixel luma opsional) — berjalan identik di Node CLI/CI dan browser.
+* Reviewer dua tahap: check deterministik **dan** reviewer (blank-frame reject + catatan FrameInspector → `needs-human`).
+* Kegagalan identik 3× berturut-turut → mission **HALTED** ("berhenti dan bertanya", tidak membakar attempt).
+* Gerbang export di Studio: tombol "Mulai Render MP4" terkunci sampai mission berstatus `passed`; peringatan pra-encode (HMADS-render) untuk resolusi >4K / durasi >10 menit / estimasi file >500 MB.
+
+```bash
+npx tsx cli/index.ts packs                     # daftar scene pack
+npx tsx cli/index.ts mission rea-opening       # jalankan mission (exit 0 = PASSED)
+```
+
 ### 3. Standar Anti-AI Slop (Gaya Visual Nesi Nowware)
 Menghindari tampilan generatif yang tampak kaku:
 * **macOS Desktop Environment**: Wallpaper Sonoma/Sequoia dan bilah menu atas (*translucent top menu bar*) dengan logo Apple asli dan *system tray*.

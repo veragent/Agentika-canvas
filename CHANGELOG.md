@@ -6,6 +6,39 @@ Seluruh catatan pembaruan, perubahan arsitektur, dan penambahan fitur pada proye
 
 ## [Unreleased] - 2026-11-06
 
+### 🚀 Phase 8: Scene Pack (Scene-as-Directory) & Render Mission Pipeline
+
+> Konsep clean-room dari analisis komparatif Nouride vs Evonic (`docs/designs/scene-pack-mission-pipeline.md`). Tanpa kode yang disalin (lisensi tidak kompatibel).
+
+**Scene Pack — scene adalah direktori, bukan file lepas:**
+* `src/scenes/<id>/IDENTITY.md` — manifest terbaca manusia & mesin (id, name, description, tags, kits, style, fps, resolution, version). Parser ringan `- key: value`, tanpa dependensi YAML.
+* `src/packs/ScenePack.ts` — `ScenePackRegistry` framework-agnostic + `parseIdentityMd()` / `renderIdentityMd()`.
+* `src/packs/loaders.vite.ts` — discovery pack via `import.meta.glob` (lazy → code-split per pack; hot-reload daftar pack di dev mode).
+* `SceneBundle` kini dideklarasikan kanonik di `src/core/SceneBundle.ts` (menghapus duplikasi interface di tiap scene).
+* `rea-opening.scene.ts` dimigrasi menjadi pack `src/scenes/rea-opening/` (IDENTITY.md + scene.ts + `createScene` alias).
+
+**Render Mission Pipeline — "video yang gagal quality gate tidak pernah diekspor":**
+* `src/missions/` — runner + 10 check deterministik + reviewer + report + export gate.
+* Check (tanpa canvas nyata, jalan identik di Node CLI/CI dan browser): `frame-count`, `duration-sanity`, `resolution-sanity`, `timeline-monotonic`, `zindex-cap` (overlay ≤ 3 di atas `maxZCap 900000`), `render-clean` (NaN/Infinity guard via tracking context), `draw-density` (frame kosong), `layer-state-clean`, `camera-state-clean`, `pixel-luma` (probe browser opsional; `skipped` di Node — degradasi anggun).
+* `DeterministicReviewer`: `approve` / `reject` (>30% frame sampel kosong) / `needs-human` (ada catatan revisi FrameInspector). Interface `MissionReviewer` siap untuk reviewer vision-LLM di masa depan.
+* Semantik Nouride: kegagalan identik **3× berturut-turut → HALTED** ("berhenti dan bertanya"); bundle dibangun segar tiap attempt.
+* `report.md` per mission: status, attempts, check detail, tabel evidence per frame, verdict reviewer.
+* **Export Gate**: `startExport` Studio kini memanggil `assertMissionPassed()` — tombol "Mulai Render MP4" memblokir export sebelum mission lulus (pesan gate menampilkan check yang gagal).
+* **HMADS-render**: `estimateExport()` menampilkan peringatan pra-encode di modal export (resolusi >4K, durasi >10 menit, estimasi file >500MB, fps >60).
+* Studio: selector Scene Pack di header (lazy load + swap engine live), chip status Mission, kartu Mission Check di modal export, pixel probe luma dari canvas hidup.
+
+**CLI baru:**
+* `npx tsx cli/index.ts packs` — daftar pack terdiscovery (`src/scenes/*/`).
+* `npx tsx cli/index.ts mission <packId|dir> [--report <path>]` — jalankan pipeline mission dari terminal/CI; exit code 0 hanya bila PASSED (pola `doctor`); menulis `report.md`.
+* `generate-scene` kini menulis **direktori pack** (`scene.ts` + `IDENTITY.md`), path import relatif disesuaikan.
+
+**Test & verifikasi:**
+* `tests/phase8_verification.ts` — 12 kelompok test: parser IDENTITY, registry, migrasi pack, tracking context, sampling, mission pass/fail/halt, reviewer reject/needs-human, report markdown, export gate, risk assessment.
+* Seluruh suite Phase 1–8 hijau; `npm run build` hijau; pack ter-code-split jadi chunk lazy (`assets/IDENTITY-*.js`, `assets/scene-*.js`).
+* `npx tsx cli/index.ts mission rea-opening` → **PASSED** (1/3 attempt).
+
+---
+
 ### ✨ Integration: EGM (Elephant-Goldfish Model) — Spec-Driven Development
 * **Instalasi plugin EGM resmi Google** (`google/elephant-goldfish-model`) ke Antigravity CLI:
   ```bash

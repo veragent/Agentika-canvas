@@ -26,3 +26,4 @@ dist-ssr/
 
 # Temporary task prompts
 task_prompt.txt
+src/scenes/*/report.md

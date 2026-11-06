@@ -132,31 +132,27 @@ export function parseMarkdownScript(content: string, fps = 60): ParsedScript {
 
 /**
  * 2. Generate TypeScript Scene Scaffold from Parsed Script
+ * Output is a Scene PACK directory: <dir>/scene.ts + <dir>/IDENTITY.md
  */
 export function generateSceneCode(script: ParsedScript): string {
   const functionName = `create${script.title.replace(/[^a-zA-Z0-9]/g, '')}Scene`;
 
   return `/**
+ * Scene Pack: ${script.title}
  * Generated automatically by agentika-canvas CLI
- * Scene: ${script.title}
  * Total Duration: ${script.totalDurationSeconds}s (${script.totalFrames} frames @ ${script.fps} FPS)
+ * Manifest: ./IDENTITY.md
  */
 
-import { SceneGraph } from '../core/SceneGraph';
-import { CanvasVideoEngine } from '../core/Engine';
-import { Camera } from '../core/Camera';
-import { MacOSDesktopLayer } from '../kits/macos/MacOSDesktopLayer';
-import { GitHubRepoLayer } from '../kits/github/GitHubRepoLayer';
-import { WindowLayer } from '../kits/macos/WindowLayer';
-import { WebcamWindowLayer } from '../kits/macos/WebcamWindowLayer';
-import { CursorLayer, CursorWaypoint } from '../kits/macos/CursorLayer';
-
-export interface SceneBundle {
-  engine: CanvasVideoEngine;
-  sceneGraph: SceneGraph;
-  camera: Camera;
-  totalFrames: number;
-}
+import { SceneGraph } from '../../core/SceneGraph';
+import { CanvasVideoEngine } from '../../core/Engine';
+import { Camera } from '../../core/Camera';
+import { SceneBundle } from '../../core/SceneBundle';
+import { MacOSDesktopLayer } from '../../kits/macos/MacOSDesktopLayer';
+import { GitHubRepoLayer } from '../../kits/github/GitHubRepoLayer';
+import { WindowLayer } from '../../kits/macos/WindowLayer';
+import { WebcamWindowLayer } from '../../kits/macos/WebcamWindowLayer';
+import { CursorLayer, CursorWaypoint } from '../../kits/macos/CursorLayer';
 
 export function ${functionName}(fps = ${script.fps}): SceneBundle {
   const totalFrames = ${script.totalFrames};
@@ -272,7 +268,64 @@ ${script.beats
     totalFrames,
   };
 }
+
+/** Scene Pack contract: canonical factory alias. */
+export const createScene = ${functionName};
 `;
+}
+
+/**
+ * 2b. Generate the pack IDENTITY.md manifest from a parsed script.
+ */
+export function generateIdentityMd(script: ParsedScript): string {
+  const slug = script.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'scene';
+
+  const actionSet = new Set<string>();
+  for (const beat of script.beats) {
+    for (const a of beat.actions) actionSet.add(a);
+  }
+
+  const tags = ['generated', ...Array.from(actionSet)].join(', ');
+  const kits = ['macos', 'github'];
+
+  return `# ${script.title}
+
+- id: ${slug}
+- name: ${script.title}
+- description: Scene hasil generate dari naskah markdown (${script.beats.length} beat, durasi ${script.totalDurationSeconds}s).
+- tags: ${tags}
+- kits: ${kits.join(', ')}
+- style: nesi-nowware anti-slop
+- fps: ${script.fps}
+- resolution: 1920x1080
+- version: 0.1.0
+`;
+}
+
+/**
+ * 2c. Discover scene packs on disk (Node/CLI side).
+ */
+export interface DiscoveredPackDir {
+  dir: string;      // absolute directory path
+  id: string;       // directory name / manifest id
+  manifest: string; // raw IDENTITY.md content (or '' when missing)
+}
+
+export function discoverPacks(scenesRoot = path.resolve(process.cwd(), 'src/scenes')): DiscoveredPackDir[] {
+  if (!fs.existsSync(scenesRoot)) return [];
+  const packs: DiscoveredPackDir[] = [];
+  for (const name of fs.readdirSync(scenesRoot)) {
+    const dir = path.join(scenesRoot, name);
+    if (!fs.statSync(dir).isDirectory()) continue;
+    if (!fs.existsSync(path.join(dir, 'scene.ts'))) continue;
+    const identityPath = path.join(dir, 'IDENTITY.md');
+    const manifest = fs.existsSync(identityPath) ? fs.readFileSync(identityPath, 'utf-8') : '';
+    packs.push({ dir, id: name, manifest });
+  }
+  return packs;
 }
 
 /**
@@ -286,16 +339,21 @@ async function main() {
     console.log(`
 agentika-canvas Antigravity CLI Automation
 Usage:
-  npx tsx cli/index.ts generate-scene <script.md> [output.ts]   Generate TS scene file from narrative script
-  npx tsx cli/index.ts batch-quiz <quiz.json> [outputDir]      Generate batch quiz video definitions
+  npx tsx cli/index.ts generate-scene <script.md> [outputDir]  Generate Scene PACK (scene.ts + IDENTITY.md) from narrative script
   npx tsx cli/index.ts inspect-script <script.md>              Inspect narrative script timing and visual cues
+  npx tsx cli/index.ts batch-quiz <quiz.json> [outputDir]      Generate batch quiz video definitions
+  npx tsx cli/index.ts packs                                   List discovered scene packs (src/scenes/*/)
+  npx tsx cli/index.ts mission <packId|dir> [--report <path>]  Run Render Mission pipeline (checks + reviewer + report.md)
     `);
     process.exit(0);
   }
 
   if (command === 'generate-scene') {
     const scriptPath = args[1];
-    const outputPath = args[2] || path.resolve(process.cwd(), 'src/scenes/rea-opening.scene.ts');
+    const slugHint = scriptPath ? path.basename(scriptPath).replace(/\\.md$/i, '') : '';
+    const outputDir =
+      args[2] ||
+      path.resolve(process.cwd(), 'src/scenes', slugHint.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'generated-scene');
 
     if (!scriptPath || !fs.existsSync(scriptPath)) {
       console.error(`Error: File '${scriptPath}' does not exist.`);
@@ -305,14 +363,20 @@ Usage:
     const scriptContent = fs.readFileSync(scriptPath, 'utf-8');
     const parsed = parseMarkdownScript(scriptContent);
     const generatedCode = generateSceneCode(parsed);
+    const identity = generateIdentityMd(parsed);
 
-    const outDir = path.dirname(outputPath);
-    if (!fs.existsSync(outDir)) {
-      fs.mkdirSync(outDir, { recursive: true });
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
     }
 
-    fs.writeFileSync(outputPath, generatedCode, 'utf-8');
-    console.log(`✓ Scene generated successfully: ${outputPath}`);
+    const scenePath = path.join(outputDir, 'scene.ts');
+    const identityPath = path.join(outputDir, 'IDENTITY.md');
+    fs.writeFileSync(scenePath, generatedCode, 'utf-8');
+    fs.writeFileSync(identityPath, identity, 'utf-8');
+
+    console.log(`✓ Scene PACK generated successfully:`);
+    console.log(`  ${scenePath}`);
+    console.log(`  ${identityPath}`);
     console.log(`  Title: ${parsed.title}`);
     console.log(`  Duration: ${parsed.totalDurationSeconds}s (${parsed.totalFrames} frames)`);
     console.log(`  Beats: ${parsed.beats.length} visual beats`);
@@ -356,6 +420,98 @@ Usage:
     items.forEach((item, idx) => {
       console.log(`  [${idx + 1}] ID:${item.id} - ${item.question} (Category: ${item.category})`);
     });
+    return;
+  }
+
+  if (command === 'packs') {
+    const packs = discoverPacks();
+    if (packs.length === 0) {
+      console.log('Tidak ada scene pack ditemukan di src/scenes/*/ (butuh scene.ts + IDENTITY.md).');
+      return;
+    }
+    console.log(`\n=== SCENE PACKS (${packs.length}) ===\n`);
+    for (const p of packs) {
+      const manifest = p.manifest ? p.manifest.split('\n').find((l) => l.startsWith('# '))?.replace('# ', '') || p.id : p.id;
+      const hasIdentity = p.manifest ? '✓' : '✗ (IDENTITY.md missing)';
+      console.log(`  [${p.id}] ${manifest}`);
+      console.log(`    dir: ${p.dir}`);
+      console.log(`    identity: ${hasIdentity}`);
+    }
+    console.log('');
+    return;
+  }
+
+  if (command === 'mission') {
+    const target = args[1];
+    if (!target) {
+      console.error('Error: mission needs a pack id or directory. Usage: mission <packId|dir> [--report <path>]');
+      process.exit(1);
+    }
+
+    // Parse flags
+    const reportIdx = args.indexOf('--report');
+    const reportFlag = reportIdx >= 0 ? args[reportIdx + 1] : undefined;
+
+    // Resolve the pack: by id, by absolute/relative dir, or by direct scene.ts path
+    const packs = discoverPacks();
+    let packDir: string | undefined;
+    if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
+      packDir = path.resolve(target);
+    } else if (fs.existsSync(target) && target.endsWith('.ts')) {
+      packDir = path.dirname(path.resolve(target));
+    } else {
+      const found = packs.find((p) => p.id === target);
+      if (!found) {
+        console.error(`Error: pack '${target}' tidak ditemukan. Jalankan 'packs' untuk daftar.`);
+        process.exit(1);
+      }
+      packDir = found.dir;
+    }
+
+    const scenePath = path.join(packDir, 'scene.ts');
+    if (!fs.existsSync(scenePath)) {
+      console.error(`Error: ${scenePath} tidak ditemukan — bukan scene pack yang valid.`);
+      process.exit(1);
+    }
+
+    const packId = path.basename(packDir);
+
+    // Dynamic import of the TS scene module (tsx registers the loader)
+    const { pathToFileURL } = await import('node:url');
+    const sceneModule = (await import(pathToFileURL(scenePath).href)) as {
+      createScene: (fps?: number) => import('../src/core/SceneBundle').SceneBundle;
+    };
+    if (typeof sceneModule.createScene !== 'function') {
+      console.error(`Error: ${scenePath} tidak mengekspor createScene().`);
+      process.exit(1);
+    }
+
+    console.log(`\n=== RENDER MISSION: ${packId} ===`);
+    console.log(`Scene: ${scenePath}`);
+    console.log(`Checks: frame-count, duration-sanity, resolution-sanity, timeline-monotonic, zindex-cap, render-clean, draw-density, layer-state-clean, camera-state-clean`);
+    console.log(`(pixel-luma: skipped — pixel probe hanya tersedia dari Studio browser)\n`);
+
+    const { runMission } = await import('../src/missions/MissionRunner');
+    const { renderMissionMarkdown } = await import('../src/missions/report');
+
+    const report = await runMission(
+      () => sceneModule.createScene(),
+      { sceneId: packId, maxAttempts: 3, sampleFrames: 12 },
+      {}
+    );
+
+    const md = renderMissionMarkdown(report);
+    const reportPath = reportFlag || path.join(packDir, 'report.md');
+    fs.writeFileSync(reportPath, md, 'utf-8');
+
+    console.log(`\nStatus: ${report.status.toUpperCase()}`);
+    console.log(`Attempts: ${report.totalAttempts}/${report.maxAttempts}`);
+    console.log(report.summary);
+    console.log(`\nReport: ${reportPath}`);
+
+    if (report.status !== 'passed') {
+      process.exit(1); // CI-friendly: non-zero on real problems (doctor pattern)
+    }
     return;
   }
 

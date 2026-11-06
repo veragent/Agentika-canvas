@@ -1,24 +1,19 @@
 /**
- * Generated automatically by agentika-canvas CLI
- * Scene: Bedah Arsitektur agentika-canvas
+ * Scene Pack: rea-opening — Bedah Arsitektur agentika-canvas
+ * Generated originally by agentika-canvas CLI, migrated to pack format.
  * Total Duration: 25.75s (1545 frames @ 60 FPS)
+ * Manifest: ./IDENTITY.md
  */
 
-import { SceneGraph } from '../core/SceneGraph';
-import { CanvasVideoEngine } from '../core/Engine';
-import { Camera } from '../core/Camera';
-import { MacOSDesktopLayer } from '../kits/macos/MacOSDesktopLayer';
-import { GitHubRepoLayer } from '../kits/github/GitHubRepoLayer';
-import { WindowLayer } from '../kits/macos/WindowLayer';
-import { WebcamWindowLayer } from '../kits/macos/WebcamWindowLayer';
-import { CursorLayer, CursorWaypoint } from '../kits/macos/CursorLayer';
-
-export interface SceneBundle {
-  engine: CanvasVideoEngine;
-  sceneGraph: SceneGraph;
-  camera: Camera;
-  totalFrames: number;
-}
+import { SceneGraph } from '../../core/SceneGraph';
+import { CanvasVideoEngine } from '../../core/Engine';
+import { Camera } from '../../core/Camera';
+import { SceneBundle } from '../../core/SceneBundle';
+import { MacOSDesktopLayer } from '../../kits/macos/MacOSDesktopLayer';
+import { GitHubRepoLayer } from '../../kits/github/GitHubRepoLayer';
+import { WindowLayer } from '../../kits/macos/WindowLayer';
+import { WebcamWindowLayer } from '../../kits/macos/WebcamWindowLayer';
+import { CursorLayer, CursorWaypoint } from '../../kits/macos/CursorLayer';
 
 export function createBedahArsitekturagentikacanvasScene(fps = 60): SceneBundle {
   const totalFrames = 1545;
@@ -131,3 +126,6 @@ export function createBedahArsitekturagentikacanvasScene(fps = 60): SceneBundle 
     totalFrames,
   };
 }
+
+/** Scene Pack contract: canonical factory alias. */
+export const createScene = createBedahArsitekturagentikacanvasScene;

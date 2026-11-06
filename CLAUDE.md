@@ -61,6 +61,12 @@ EGM artifact directory: docs/designs
   npx tsx tests/phase5_verification.ts
   npx tsx tests/phase6_verification.ts
   npx tsx tests/phase7_verification.ts
+  npx tsx tests/phase8_verification.ts
+  ```
+* **Daftar Scene Pack & Render Mission (quality gate pra-export)**:
+  ```bash
+  npx tsx cli/index.ts packs
+  npx tsx cli/index.ts mission rea-opening      # exit 0 hanya bila PASSED; menulis report.md
   ```
 
 ---

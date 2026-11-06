@@ -15,6 +15,13 @@ import { ExternalVideoLayer } from '../kits/ExternalVideoLayer';
 import { checkWebCodecsSupport, WebCodecsCapabilities } from '../core/Capabilities';
 import { FrameInspector, FrameDiagnosticInfo } from './FrameInspector';
 import { exportVideo, downloadBlob } from '../media/MediaExporter';
+import { SceneBundle } from '../core/SceneBundle';
+import { SceneGraph } from '../core/SceneGraph';
+import { runMission } from '../missions/MissionRunner';
+import { MissionReport } from '../missions/types';
+import { assertMissionPassed, estimateExport } from '../missions/exportGate';
+import { loadScenePacks, DiscoveredPack } from '../packs/loaders.vite';
+import { scenePackRegistry } from '../packs/ScenePack';
 import {
   Play,
   Pause,
@@ -33,7 +40,131 @@ import {
   EyeOff,
   X,
   Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
+
+/**
+ * Build the Studio's default inline scene (Phase 4 demo layout).
+ * Extracted to module level so the Render Mission pipeline can instantiate
+ * FRESH copies of the exact scene shown on canvas.
+ */
+function buildStudioDefaultScene(enableShake: boolean, shakeIntensity: number): SceneBundle {
+  const localTotalFrames = 360; // 6 seconds @ 60fps
+  const localFps = 60;
+
+  const camera = new Camera({
+    enableShake,
+    shakeIntensity,
+    shakeFrequency: 1.2,
+    rotationalShake: 0.0012,
+  });
+
+  const sceneGraph = new SceneGraph();
+
+  const engine = new CanvasVideoEngine(
+    {
+      width: 1920,
+      height: 1080,
+      fps: localFps,
+      durationInFrames: localTotalFrames,
+      camera,
+      backgroundColor: '#020617',
+    },
+    sceneGraph
+  );
+
+  const desktop = new MacOSDesktopLayer({ wallpaperStyle: 'sequoia', activeAppName: 'GitHub Desktop' });
+
+  const github = new GitHubRepoLayer({
+    id: 'win-github',
+    x: 80,
+    y: 60,
+    width: 1180,
+    height: 720,
+    zIndex: 10,
+    owner: 'agentika-ai',
+    repoName: 'agentika-canvas',
+    starStartFrame: 30,
+    starEndFrame: 160,
+    startStars: 48200,
+    targetStars: 354890,
+  });
+
+  const terminal = new WindowLayer({
+    id: 'win-terminal',
+    title: 'Antigravity CLI — v1.4.12 (ARM64)',
+    x: 760,
+    y: 380,
+    width: 860,
+    height: 480,
+    zIndex: 20,
+    accentColor: '#10b981',
+    contentRenderer: (rc, x, y, w, h) => {
+      const { ctx } = rc;
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(x, y, w, h);
+
+      ctx.fillStyle = '#10b981';
+      ctx.font = '14px monospace';
+      ctx.fillText('$ agy run-phase-4 --editor-studio=true', x + 16, y + 28);
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText('✓ Frame Inspector: frame-by-frame diagnostic readout', x + 16, y + 56);
+      ctx.fillText('✓ AI Slop Prompt Logger: copy structured revision prompts', x + 16, y + 80);
+      ctx.fillText('✓ Export MP4 Modal: 1-click in-browser export trigger', x + 16, y + 104);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(`[Studio Scrubber] Frame: ${rc.frame} | ${rc.timestampUs} µs`, x + 16, y + 140);
+    },
+  });
+
+  const webcam = new WebcamWindowLayer({
+    id: 'win-webcam',
+    x: 1420,
+    y: 80,
+    width: 380,
+    height: 380,
+    zIndex: 50,
+    presenterName: 'Alex Developer',
+    resizeStartFrame: 140,
+    resizeEndFrame: 220,
+    targetScale: 0.68,
+    targetX: 1540,
+    targetY: 620,
+  });
+
+  const externalVideo = new ExternalVideoLayer({
+    id: 'win-ext-video',
+    title: 'Demo Reel — ScreenCapture.mp4',
+    x: 240,
+    y: 360,
+    width: 700,
+    height: 390,
+    zIndex: 15,
+    timelineStartFrame: 0,
+    timelineEndFrame: localTotalFrames,
+  });
+
+  const cursor = new CursorLayer([
+    { frame: 0, point: { x: 300, y: 200 }, type: 'default' },
+    { frame: 30, point: { x: 1140, y: 142 }, type: 'pointer' },
+    { frame: 70, point: { x: 1140, y: 142 }, type: 'pointer' },
+    { frame: 100, point: { x: 920, y: 440 }, type: 'default' },
+    { frame: 135, point: { x: 1420, y: 80 }, type: 'resize' },
+    { frame: 220, point: { x: 1540, y: 620 }, type: 'resize' },
+    { frame: 240, point: { x: 1480, y: 600 }, type: 'default' },
+    { frame: 360, point: { x: 800, y: 500 }, type: 'default' },
+  ]);
+
+  sceneGraph.addLayer(desktop);
+  sceneGraph.addLayer(github);
+  sceneGraph.addLayer(externalVideo);
+  sceneGraph.addLayer(terminal);
+  sceneGraph.addLayer(webcam);
+  sceneGraph.addLayer(cursor);
+
+  return { engine, sceneGraph, camera, totalFrames: localTotalFrames };
+}
 
 export const EditorApp: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -54,8 +185,20 @@ export const EditorApp: React.FC = () => {
   const [exportFps, setExportFps] = useState(0);
   const [exportComplete, setExportComplete] = useState(false);
 
-  const totalFrames = 360; // 6 seconds at 60 fps
+  // Scene Pack & Mission State (Render Mission Pipeline)
+  const totalFrames = 360; // 6 seconds at 60 fps (Studio default scene)
   const fps = 60;
+  const [sceneTotalFrames, setSceneTotalFrames] = useState(totalFrames);
+  const [packs, setPacks] = useState<DiscoveredPack[]>([]);
+  const [selectedPackId, setSelectedPackId] = useState<string>('__studio__');
+  const [missionReport, setMissionReport] = useState<MissionReport | null>(null);
+  const [missionRunning, setMissionRunning] = useState(false);
+  const [missionError, setMissionError] = useState<string | null>(null);
+  const [exportGateMsg, setExportGateMsg] = useState<string | null>(null);
+
+  // Scene-swap bookkeeping
+  const sceneFactoryRef = useRef<(() => SceneBundle) | null>(null);
+  const unsubFrameRef = useRef<(() => void) | null>(null);
 
   // Sync layers list from engine
   const refreshLayers = useCallback(() => {
@@ -71,133 +214,142 @@ export const EditorApp: React.FC = () => {
     );
   }, []);
 
+  /**
+   * Adopt a SceneBundle: bind it to the live canvas, rewire frame listeners,
+   * reset mission state. Used by mount, scene-pack swap, and default rebuild.
+   */
+  const adoptBundle = useCallback(
+    (bundle: SceneBundle, factory: () => SceneBundle) => {
+      engineRef.current?.pause();
+      unsubFrameRef.current?.();
+
+      engineRef.current = bundle.engine;
+      sceneFactoryRef.current = factory;
+
+      if (canvasRef.current) {
+        bundle.engine.attachCanvas(canvasRef.current);
+      }
+
+      unsubFrameRef.current = bundle.engine.onFrame((frame) => {
+        setCurrentFrame(frame);
+      });
+
+      setSceneTotalFrames(bundle.totalFrames);
+      setCurrentFrame(0);
+      setMissionReport(null);
+      setMissionError(null);
+      setExportGateMsg(null);
+
+      refreshLayers();
+      bundle.engine.renderAtFrame(0);
+    },
+    [refreshLayers]
+  );
+
+  /** Load a scene pack (or rebuild the Studio default scene) into the canvas. */
+  const handleSelectPack = useCallback(
+    async (packId: string) => {
+      setSelectedPackId(packId);
+
+      if (packId === '__studio__') {
+        const factory = () => buildStudioDefaultScene(cameraShake, cameraIntensity);
+        adoptBundle(factory(), factory);
+        return;
+      }
+
+      const entry = scenePackRegistry.get(packId);
+      if (!entry) {
+        setMissionError(`Scene pack '${packId}' tidak ditemukan di registry.`);
+        return;
+      }
+
+      try {
+        const mod = await entry.loadModule();
+        const factory = (): SceneBundle => mod.createScene(fps);
+        adoptBundle(factory(), factory);
+      } catch (err) {
+        setMissionError(`Gagal memuat pack '${packId}': ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [adoptBundle, cameraShake, cameraIntensity, fps]
+  );
+
+  /** Browser pixel probe: luma statistics of a rendered frame on the live canvas. */
+  const pixelProbe = useCallback(
+    (frame: number): { mean: number; variance: number } | null => {
+      const engine = engineRef.current;
+      const canvas = canvasRef.current;
+      if (!engine || !canvas) return null;
+
+      const prevFrame = engine.getCurrentFrame();
+      engine.renderAtFrame(frame);
+      try {
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let sum = 0;
+        let sumSq = 0;
+        let n = 0;
+        const stride = 256; // sample every 64th pixel
+        for (let i = 0; i + 2 < data.length; i += stride * 4) {
+          const luma = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+          sum += luma;
+          sumSq += luma * luma;
+          n++;
+        }
+        engine.renderAtFrame(prevFrame);
+        if (n === 0) return null;
+        const mean = sum / n;
+        return { mean, variance: sumSq / n - mean * mean };
+      } catch {
+        engine.renderAtFrame(prevFrame);
+        return null;
+      }
+    },
+    []
+  );
+
+  /** Run the Render Mission pipeline (checks + reviewer) against the CURRENT scene. */
+  const runMissionCheck = useCallback(async () => {
+    const factory = sceneFactoryRef.current;
+    if (!factory) {
+      setMissionError('Scene factory belum siap.');
+      return;
+    }
+    setMissionRunning(true);
+    setMissionError(null);
+    try {
+      const report = await runMission(
+        factory,
+        {
+          sceneId: selectedPackId === '__studio__' ? 'studio-default' : selectedPackId,
+          maxAttempts: 3,
+          sampleFrames: 12,
+        },
+        { pixelProbe }
+      );
+      setMissionReport(report);
+    } catch (err) {
+      setMissionError(`Mission error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setMissionRunning(false);
+    }
+  }, [pixelProbe, selectedPackId]);
+
   useEffect(() => {
     // 1. Check WebCodecs Capabilities
     checkWebCodecsSupport().then((caps) => {
       setCapabilities(caps);
     });
 
-    // 2. Initialize Camera
-    const camera = new Camera({
-      enableShake: cameraShake,
-      shakeIntensity: cameraIntensity,
-      shakeFrequency: 1.2,
-      rotationalShake: 0.0012,
+    // 2. Discover Scene Packs (registry + manifests for the selector)
+    loadScenePacks().then(setPacks).catch(() => {
+      /* pack discovery is best-effort; the default scene still works */
     });
 
-    // 3. Initialize Engine
-    const engine = new CanvasVideoEngine({
-      width: 1920,
-      height: 1080,
-      fps,
-      durationInFrames: totalFrames,
-      camera,
-      backgroundColor: '#020617',
-    });
-    engineRef.current = engine;
-
-    if (canvasRef.current) {
-      engine.attachCanvas(canvasRef.current);
-    }
-
-    // 4. Register Layers
-    const desktop = new MacOSDesktopLayer({ wallpaperStyle: 'sequoia', activeAppName: 'GitHub Desktop' });
-
-    const github = new GitHubRepoLayer({
-      id: 'win-github',
-      x: 80,
-      y: 60,
-      width: 1180,
-      height: 720,
-      zIndex: 10,
-      owner: 'agentika-ai',
-      repoName: 'agentika-canvas',
-      starStartFrame: 30,
-      starEndFrame: 160,
-      startStars: 48200,
-      targetStars: 354890,
-    });
-
-    const terminal = new WindowLayer({
-      id: 'win-terminal',
-      title: 'Antigravity CLI — v1.4.12 (ARM64)',
-      x: 760,
-      y: 380,
-      width: 860,
-      height: 480,
-      zIndex: 20,
-      accentColor: '#10b981',
-      contentRenderer: (rc, x, y, w, h) => {
-        const { ctx } = rc;
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(x, y, w, h);
-
-        ctx.fillStyle = '#10b981';
-        ctx.font = '14px monospace';
-        ctx.fillText('$ agy run-phase-4 --editor-studio=true', x + 16, y + 28);
-
-        ctx.fillStyle = '#38bdf8';
-        ctx.fillText('✓ Frame Inspector: frame-by-frame diagnostic readout', x + 16, y + 56);
-        ctx.fillText('✓ AI Slop Prompt Logger: copy structured revision prompts', x + 16, y + 80);
-        ctx.fillText('✓ Export MP4 Modal: 1-click in-browser export trigger', x + 16, y + 104);
-
-        ctx.fillStyle = '#94a3b8';
-        ctx.fillText(`[Studio Scrubber] Frame: ${rc.frame} | ${rc.timestampUs} µs`, x + 16, y + 140);
-      },
-    });
-
-    const webcam = new WebcamWindowLayer({
-      id: 'win-webcam',
-      x: 1420,
-      y: 80,
-      width: 380,
-      height: 380,
-      zIndex: 50,
-      presenterName: 'Alex Developer',
-      resizeStartFrame: 140,
-      resizeEndFrame: 220,
-      targetScale: 0.68,
-      targetX: 1540,
-      targetY: 620,
-    });
-
-    const externalVideo = new ExternalVideoLayer({
-      id: 'win-ext-video',
-      title: 'Demo Reel — ScreenCapture.mp4',
-      x: 240,
-      y: 360,
-      width: 700,
-      height: 390,
-      zIndex: 15,
-      timelineStartFrame: 0,
-      timelineEndFrame: totalFrames,
-    });
-
-    const cursor = new CursorLayer([
-      { frame: 0, point: { x: 300, y: 200 }, type: 'default' },
-      { frame: 30, point: { x: 1140, y: 142 }, type: 'pointer' },
-      { frame: 70, point: { x: 1140, y: 142 }, type: 'pointer' },
-      { frame: 100, point: { x: 920, y: 440 }, type: 'default' },
-      { frame: 135, point: { x: 1420, y: 80 }, type: 'resize' },
-      { frame: 220, point: { x: 1540, y: 620 }, type: 'resize' },
-      { frame: 240, point: { x: 1480, y: 600 }, type: 'default' },
-      { frame: 360, point: { x: 800, y: 500 }, type: 'default' },
-    ]);
-
-    engine.sceneGraph.addLayer(desktop);
-    engine.sceneGraph.addLayer(github);
-    engine.sceneGraph.addLayer(externalVideo);
-    engine.sceneGraph.addLayer(terminal);
-    engine.sceneGraph.addLayer(webcam);
-    engine.sceneGraph.addLayer(cursor);
-
-    refreshLayers();
-
-    const unsubscribe = engine.onFrame((frame) => {
-      setCurrentFrame(frame);
-    });
-
-    engine.renderAtFrame(0);
+    // 3. Build & adopt the default Studio scene (camera + engine + layers)
+    const factory = () => buildStudioDefaultScene(cameraShake, cameraIntensity);
+    adoptBundle(factory(), factory);
 
     // Keyboard Shortcuts (Space = Play/Pause, Left/Right = Step)
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -219,10 +371,10 @@ export const EditorApp: React.FC = () => {
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      unsubscribe();
-      engine.pause();
+      unsubFrameRef.current?.();
+      engineRef.current?.pause();
     };
-  }, [refreshLayers]);
+  }, [refreshLayers, adoptBundle, cameraShake, cameraIntensity]);
 
   // Controls
   const togglePlay = () => {
@@ -233,7 +385,7 @@ export const EditorApp: React.FC = () => {
 
   const step = (delta: number) => {
     if (!engineRef.current) return;
-    const target = Math.max(0, Math.min(totalFrames - 1, currentFrame + delta));
+    const target = Math.max(0, Math.min(sceneTotalFrames - 1, currentFrame + delta));
     engineRef.current.seekToFrame(target);
     setIsPlaying(false);
   };
@@ -277,8 +429,17 @@ export const EditorApp: React.FC = () => {
     }
   };
 
-  // Real in-browser WebCodecs export pipeline
+  // Real in-browser WebCodecs export pipeline — gated by the Render Mission
   const startExport = async () => {
+    // MISSION GATE: video yang gagal quality gate tidak pernah diekspor.
+    setExportGateMsg(null);
+    try {
+      assertMissionPassed(missionReport);
+    } catch (gateErr) {
+      setExportGateMsg(gateErr instanceof Error ? gateErr.message : String(gateErr));
+      return;
+    }
+
     setIsExporting(true);
     setExportProgress(0);
     setExportFps(0);
@@ -287,10 +448,10 @@ export const EditorApp: React.FC = () => {
     try {
       const blob = await exportVideo(
         {
-          width: 1920,
-          height: 1080,
-          fps,
-          totalFrames,
+          width: engineRef.current?.width ?? 1920,
+          height: engineRef.current?.height ?? 1080,
+          fps: engineRef.current?.fps ?? fps,
+          totalFrames: engineRef.current?.durationInFrames ?? sceneTotalFrames,
           codec: 'avc',
           bitrate: 6_000_000,
           enableCameraShake: cameraShake,
@@ -366,6 +527,58 @@ export const EditorApp: React.FC = () => {
               </span>
             )}
           </div>
+
+          {/* Mission status chip */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '12px',
+              background: '#0f172a',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: `1px solid ${missionReport ? (missionReport.status === 'passed' ? '#22c55e' : '#ef4444') : '#1e293b'}`,
+            }}
+            title="Render Mission Pipeline — video hanya bisa diekspor setelah lulus verifikasi"
+          >
+            <ShieldCheck size={15} color={missionReport?.status === 'passed' ? '#4ade80' : missionReport ? '#f87171' : '#64748b'} />
+            <span style={{ color: '#94a3b8' }}>Mission:</span>
+            {missionRunning ? (
+              <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>Checking…</span>
+            ) : missionReport ? (
+              <span style={{ color: missionReport.status === 'passed' ? '#4ade80' : '#f87171', fontWeight: 'bold' }}>
+                {missionReport.status.toUpperCase()}
+              </span>
+            ) : (
+              <span style={{ color: '#64748b' }}>not run</span>
+            )}
+          </div>
+
+          {/* Scene Pack selector */}
+          <select
+            value={selectedPackId}
+            onChange={(e) => handleSelectPack(e.target.value)}
+            style={{
+              background: '#0f172a',
+              color: '#e2e8f0',
+              border: '1px solid #1e293b',
+              padding: '6px 10px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              cursor: 'pointer',
+            }}
+            title="Muat Scene Pack (src/scenes/*/) ke canvas"
+          >
+            <option value="__studio__">Studio Default Scene</option>
+            {packs
+              .filter((p) => !p.skipped)
+              .map((p) => (
+                <option key={p.manifest.id} value={p.manifest.id}>
+                  {p.manifest.name} ({p.manifest.resolution} @ {p.manifest.fps}fps)
+                </option>
+              ))}
+          </select>
 
           {/* Export MP4 Button */}
           <button
@@ -496,7 +709,7 @@ export const EditorApp: React.FC = () => {
                 <div>
                   <span style={{ color: '#64748b' }}>FRAME: </span>
                   <strong style={{ color: '#38bdf8' }}>{currentFrame}</strong>
-                  <span style={{ color: '#64748b' }}> / {totalFrames}</span>
+                  <span style={{ color: '#64748b' }}> / {sceneTotalFrames}</span>
                 </div>
                 <div>
                   <span style={{ color: '#64748b' }}>TIME: </span>
@@ -513,7 +726,7 @@ export const EditorApp: React.FC = () => {
             <input
               type="range"
               min={0}
-              max={totalFrames - 1}
+              max={sceneTotalFrames - 1}
               value={currentFrame}
               onChange={(e) => seek(parseInt(e.target.value, 10))}
               style={{ width: '100%', cursor: 'pointer', accentColor: '#38bdf8', height: '6px' }}
@@ -809,6 +1022,118 @@ export const EditorApp: React.FC = () => {
               >
                 <CheckCircle2 size={18} />
                 Video MP4 siap diunduh (Generated in-browser)!
+              </div>
+            )}
+
+            {/* Render Mission card — quality gate pra-export */}
+            <div
+              style={{
+                backgroundColor: 'rgba(2, 132, 199, 0.08)',
+                border: `1px solid ${missionReport?.status === 'passed' ? '#22c55e' : missionReport ? '#ef4444' : '#1e293b'}`,
+                padding: '14px',
+                borderRadius: '8px',
+                marginBottom: '16px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 'bold' }}>
+                  <ShieldCheck size={16} color="#38bdf8" />
+                  Render Mission — Quality Gate
+                </div>
+                <button
+                  onClick={runMissionCheck}
+                  disabled={missionRunning || isExporting}
+                  style={{
+                    background: missionRunning ? '#334155' : '#0369a1',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    cursor: missionRunning ? 'not-allowed' : 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  {missionRunning ? 'Memeriksa…' : missionReport ? 'Run Ulang' : 'Jalankan Mission Check'}
+                </button>
+              </div>
+
+              {missionReport ? (
+                <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                  <div style={{ marginBottom: '4px' }}>
+                    Status:{' '}
+                    <b style={{ color: missionReport.status === 'passed' ? '#4ade80' : '#f87171' }}>
+                      {missionReport.status.toUpperCase()}
+                    </b>{' '}
+                    · attempts {missionReport.totalAttempts}/{missionReport.maxAttempts} · {missionReport.summary}
+                  </div>
+                  {missionReport.attempts[missionReport.attempts.length - 1]?.checks
+                    .filter((c) => !c.passed && !c.skipped)
+                    .slice(0, 4)
+                    .map((c) => (
+                      <div key={c.id} style={{ color: c.severity === 'warning' ? '#eab308' : '#f87171', marginTop: '2px' }}>
+                        {c.severity === 'warning' ? '⚠' : '✗'} {c.label} — {c.details}
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: '12px', color: '#64748b' }}>
+                  Belum ada mission. Export MP4 <b>diblokir</b> sampai scene lulus check deterministik + reviewer.
+                </div>
+              )}
+
+              {missionError && (
+                <div style={{ marginTop: '8px', fontSize: '12px', color: '#f87171' }}>✗ {missionError}</div>
+              )}
+            </div>
+
+            {/* Pre-export risk assessment (HMADS-render) */}
+            {(() => {
+              const est = estimateExport({
+                width: engineRef.current?.width ?? 1920,
+                height: engineRef.current?.height ?? 1080,
+                fps: engineRef.current?.fps ?? fps,
+                totalFrames: engineRef.current?.durationInFrames ?? sceneTotalFrames,
+                bitrate: 6_000_000,
+              });
+              if (est.warnings.length === 0) return null;
+              return (
+                <div
+                  style={{
+                    backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                    border: '1px solid #eab308',
+                    padding: '12px',
+                    borderRadius: '8px',
+                    marginBottom: '16px',
+                    fontSize: '12px',
+                    color: '#eab308',
+                  }}
+                >
+                  <b>Peringatan pra-export:</b>
+                  {est.warnings.map((w) => (
+                    <div key={w} style={{ marginTop: '4px' }}>
+                      ⚠ {w}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {exportGateMsg && (
+              <div
+                style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid #ef4444',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  marginBottom: '16px',
+                  fontSize: '12px',
+                  color: '#f87171',
+                  whiteSpace: 'pre-line',
+                }}
+              >
+                ⛔ <b>Export diblokir Mission Gate:</b>
+                <div style={{ marginTop: '4px' }}>{exportGateMsg}</div>
               </div>
             )}
 

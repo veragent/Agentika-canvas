@@ -13,7 +13,7 @@ Indeks seluruh artefak desain dan spesifikasi pada proyek ini. Artefak baru hasi
 
 ## Rancangan EGM (Menunggu Desain)
 
-* _(Belum ada — rancangan fitur baru hasil `/egm:egm-draft` akan terdaftar di sini.)_
+* [scene-pack-mission-pipeline.md](scene-pack-mission-pipeline.md) | ✅ Implemented | Scene-as-Directory (IDENTITY.md + registry) & Render Mission Pipeline (check deterministik + reviewer + export gate). Konsep clean-room dari analisis Nouride/Evonic. *(Catatan: ditulis saat sesi `agy` terblokir 403; review EGM formal menunggu akun aktif.)*
 
 ## Konvensi Penamaan
 
