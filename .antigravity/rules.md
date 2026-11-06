@@ -4,6 +4,27 @@ Dokumen ini adalah aturan wajib (*mandatory prompt doctrines*) bagi setiap agen 
 
 ---
 
+## 0. Doktrin Desain: EGM (Elephant-Goldfish Model) — Spec-Driven Development
+
+Proyek ini menggunakan plugin **EGM** (google/elephant-goldfish-model) yang terinstal di Antigravity CLI (`agy plugin install https://github.com/google/elephant-goldfish-model`). Setiap fitur baru yang memerlukan keputusan desain **WAJIB** melalui alur EGM sebelum kode ditulis:
+
+1. **`/egm:egm-brainstorm <ide fitur>`** — Eksplorasi ide. Goldfish swarm (reviewer zero-context) menantang proposal, hasil disepakati ke `docs/designs/concepts_brief.md`.
+2. **`/egm:egm-draft`** — Ubah brief menjadi dokumen desain formal di `docs/designs/`, section demi section dengan jeda feedback manusia.
+3. **`/egm:egm-review docs/designs/<file>.md`** — Review multi-stage oleh Goldfish fresh-context (5 lensa: design, comprehension, structural, style, implementation-readiness).
+4. **`/egm:egm-resolve`** — Proses temuan review dan sepakati perubahan.
+5. **Implementasi** — Setelah desain disetujui manusia, bangun sesuai rencana dalam dokumen desain, tunduk pada semua doktrin di bawah (bagian 1–4).
+6. **`/egm:egm-drift-report`** — Jalankan mingguan untuk membandingkan dokumen desain vs kode aktif; rekonsiliasi setiap divergence.
+7. **`/egm:egm-bootstrap <path>`** — Gunakan untuk men-generate/update README hierarkis pada direktori baru.
+
+**Aturan EGM untuk agen:**
+* Selalu tulis prefix `/egm:` saat memanggil skill EGM di Antigravity CLI (contoh: `/egm:egm-brainstorm`).
+* EGM artifact directory proyek ini: `docs/designs/` (lihat `AGENTS.md`).
+* Goldfish review wajib berjalan di subagent fresh-context (`invoke_subagent` dengan persona `egm-*`); JANGAN jalankan review di konteks percakapan yang sama.
+* Pengecualian: bug fix kecil dan jelas boleh langsung dikerjakan tanpa alur EGM penuh.
+* Konteks proyek untuk Elephant tersedia di skill `_agents/skills/agentika_canvas_elephant/SKILL.md`.
+
+---
+
 ## 1. Doktrin Utama: $0 Server & In-Browser Determinism
 1. **Dilarang keras menggunakan server FFmpeg atau Puppeteer backend**: Seluruh proses render video berjalan 100% di browser lokal memanfaatkan **HTML5 Canvas 2D / OffscreenCanvas** dan **WebCodecs API** (`VideoEncoder` / `VideoDecoder`) via **Mediabunny**.
 2. **Dilarang menggunakan `setTimeout`, `setInterval`, atau jam wall-clock nyata dalam logika animasi**:

@@ -4,6 +4,26 @@ Seluruh catatan pembaruan, perubahan arsitektur, dan penambahan fitur pada proye
 
 ---
 
+## [Unreleased] - 2026-11-06
+
+### ✨ Integration: EGM (Elephant-Goldfish Model) — Spec-Driven Development
+* **Instalasi plugin EGM resmi Google** (`google/elephant-goldfish-model`) ke Antigravity CLI:
+  ```bash
+  agy plugin install https://github.com/google/elephant-goldfish-model
+  ```
+  Terinstal di `~/.gemini/config/plugins/egm` — **7 skills** (`egm-brainstorm`, `egm-draft`, `egm-review`, `egm-resolve`, `egm-bootstrap`, `egm-review-loop`, `egm-drift-report`) dan **10 persona reviewer** (`egm-design`, `egm-zoom-out`, `egm-synthesizer`, dst.).
+* **Aturan proyek agar terbaca Antigravity CLI**:
+  * `.antigravity/rules.md` — ditambahkan "Doktrin Desain: EGM" (bagian 0) berisi alur wajib `/egm:` (brainstorm → draft → review → resolve → implementasi → drift-report mingguan), aturan prefix `/egm:`, artifact directory, dan kewajiban subagent fresh-context untuk Goldfish review.
+  * `AGENTS.md` (baru) — instruksi umum semua agen AI, deklarasi `EGM artifact directory: docs/designs`, tabel skill EGM, dan aturan kode.
+  * `CLAUDE.md` — disinkronkan dengan tabel skill EGM + konvensi desain.
+* **Infrastruktur EGM di repo**:
+  * `docs/designs/SITEMAP.md` — indeks artefak desain (PRD, ROADMAP, ARCHITECTURE_ANALYSIS, CHANGELOG) + konvensi penamaan & cadence drift mingguan.
+  * `_agents/skills/agentika_canvas_elephant/SKILL.md` — custom context loader proyek untuk agen Elephant (invarian inti, key code paths, konvensi).
+* **README.md** — ditambahkan section "EGM (Elephant-Goldfish Model)" dengan langkah instalasi `agy plugin install`, alur kerja desain 6 langkah, dan pembaruan struktur direktori.
+* ⚠️ **Catatan runtime**: pada 2026-11-06, verifikasi live sesi `agy` gagal dengan `403 PERMISSION_DENIED` (layanan Antigravity untuk akun terblokir ToS pending appeal). Instalasi & registrasi plugin sudah tervalidasi lokal via `agy plugin list` dan `agy agents`; verifikasi end-to-end slash command menunggu akun aktif kembali.
+
+---
+
 ## [v1.0.0] - 2026-10-31
 
 ### 🚀 Implementasi Penuh: Fase 1 s/d Fase 7

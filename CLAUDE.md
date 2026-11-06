@@ -2,6 +2,33 @@
 
 Repositori ini adalah framework pembuatan video terprogram (*programmatic video generation*) berbasis **HTML5 Canvas + WebCodecs API** yang berjalan **100% di browser klien dengan biaya server $0**.
 
+**Dokumen instruksi lengkap:** `AGENTS.md` dan `.antigravity/rules.md` (doktrin wajib untuk semua agen AI).
+
+---
+
+## 🏛️ EGM (Elephant-Goldfish Model) — Spec-Driven Development
+
+Plugin EGM (google/elephant-goldfish-model) terinstal. Gunakan alur desain untuk setiap fitur baru yang memerlukan keputusan arsitektur:
+
+```
+EGM artifact directory: docs/designs
+```
+
+| Skill | Fungsi |
+| :--- | :--- |
+| `/egm:egm-brainstorm <ide>` | Eksplorasi ide + Goldfish swarm, menghasilkan `concepts_brief.md` |
+| `/egm:egm-draft` | Draft dokumen desain formal ke `docs/designs/` per-section |
+| `/egm:egm-review docs/designs/<file>.md` | Review multi-stage oleh subagent fresh-context (5 lensa) |
+| `/egm:egm-resolve` | Proses temuan review dan sepakati perubahan |
+| `/egm:egm-bootstrap <path>` | Generate/update README hierarkis untuk direktori |
+| `/egm:egm-review-loop` | Jalankan kelompok reviewer spesifik |
+| `/egm:egm-drift-report` | Bandingkan dokumen desain vs kode aktif (mingguan) |
+
+* Konteks proyek untuk Elephant: `_agents/skills/agentika_canvas_elephant/SKILL.md`.
+* Review Goldfish WAJIB di subagent fresh-context (persona `egm-*`), tidak di konteks yang sama.
+* Desain yang disetujui disimpan di `docs/designs/` dan diindeks di `docs/designs/SITEMAP.md`.
+* Pengecualian: bug fix kecil dan jelas boleh langsung dikerjakan tanpa alur EGM.
+
 ---
 
 ## 🛠️ Perintah CLI Utama

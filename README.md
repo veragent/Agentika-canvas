@@ -57,7 +57,15 @@ agentika-canvas/
 ├── CHANGELOG.md                   # Rekam jejak detail per fase
 ├── CLAUDE.md                      # Instruksi kerja Claude Code / Antigravity CLI
 ├── .antigravity/
-│   └── rules.md                   # Doktrin ketat anti-AI slop untuk agen AI
+│   └── rules.md                   # Doktrin ketat anti-AI slop + alur EGM untuk agen AI
+├── AGENTS.md                      # Instruksi umum semua agen AI + EGM artifact directory
+├── _agents/
+│   └── skills/
+│       └── agentika_canvas_elephant/
+│           └── SKILL.md           # Context loader proyek untuk agen Elephant (EGM)
+├── docs/
+│   └── designs/
+│       └── SITEMAP.md             # Indeks artefak desain EGM
 ├── public/
 │   └── wasm-files/
 │       ├── web-demuxer.wasm       # Biner WASM demuxer multi-format
@@ -152,6 +160,37 @@ Hasil kompilasi siap produksi akan berada di direktori `dist/`.
 4. **Ekspor MP4 Sekali Klik**:
    * Klik tombol **"Export MP4"** di sudut kanan atas.
    * Browser akan menjalankan *Dedicated Web Worker* di latar belakang (`OffscreenCanvas`), melakukan *encoding* perangkat keras, dan memicu unduhan file `agentika-canvas-1080p.mp4` secara otomatis.
+
+---
+
+## 🏛️ EGM (Elephant-Goldfish Model) — Spec-Driven Development
+
+Proyek ini terintegrasi dengan [EGM](https://github.com/google/elephant-goldfish-model) — plugin open-source dari Google untuk desain spesifikasi berbasis *Elephant & Goldfish* (desainer dengan konteks penuh vs reviewer fresh-context).
+
+### Instalasi (Antigravity CLI)
+
+```bash
+agy plugin install https://github.com/google/elephant-goldfish-model
+```
+
+Instalasi mendaftarkan **7 skills** dan **10 persona reviewer** (`egm-design`, `egm-zoom-out`, `egm-synthesizer`, dst.) yang bisa dilihat via `agy plugin list` dan `agy agents`.
+
+### Alur Kerja Desain
+
+Fitur baru yang memerlukan keputusan desain **wajib** melalui alur berikut (di Antigravity CLI gunakan prefix `/egm:`):
+
+```text
+1. /egm:egm-brainstorm <ide fitur>    → konsep disepakati ke docs/designs/concepts_brief.md
+2. /egm:egm-draft                     → draft desain formal di docs/designs/
+3. /egm:egm-review docs/designs/x.md  → review multi-stage oleh Goldfish fresh-context
+4. /egm:egm-resolve                   → proses temuan review
+5. Implementasi                       → bangun sesuai desain yang disetujui
+6. /egm:egm-drift-report (mingguan)   → deteksi drift dokumen vs kode
+```
+
+* Artefak desain disimpan di `docs/designs/` dan diindeks di `docs/designs/SITEMAP.md`.
+* Konteks proyek untuk agen Elephant: `_agents/skills/agentika_canvas_elephant/SKILL.md`.
+* Aturan lengkap: `AGENTS.md`, `.antigravity/rules.md`, dan `CLAUDE.md`.
 
 ---
 
